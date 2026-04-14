@@ -104,7 +104,7 @@ $$\int_{\mathcal{M}} f(X)\, d\mu_g(X) = C \int_{\mathcal{W}} f(\theta)\, w(\thet
 
 where the **density kernel** $w(\theta)$ is the Jacobian of the spectral change of variables, given explicitly by
 
-$$w(\theta) = \prod_{\alpha \in \Phi^+} \left|\sin\!\left(c_\alpha\, \alpha(\theta)\right)\right|^{m_\alpha}$$
+$$w(\theta) = \prod_{\alpha \in \Phi^+} \left|\sin\left(c_\alpha\, \alpha(\theta)\right)\right|^{m_\alpha}$$
 
 with $\Phi^+$ the positive restricted roots, $m_\alpha$ the geometric multiplicity of each root, and $c_\alpha$ a structural constant. The induced density on the shape space is therefore
 
