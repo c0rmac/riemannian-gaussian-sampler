@@ -33,8 +33,20 @@ endif ()
 if (EXISTS "${ISOMORPHISM_DIR}/CMakeLists.txt")
     message(STATUS "Sampler: using isomorphism source at ${ISOMORPHISM_DIR}")
     add_subdirectory(${ISOMORPHISM_DIR} isomorphism_build)
+    # add_subdirectory creates the plain 'isomorphism' alias directly.
+    set(_iso_link_target isomorphism)
 else ()
     find_package(isomorphism REQUIRED)
+    # find_package only exports namespaced targets (isomorphism::mlx, etc.)
+    # and sets isomorphism_DEFAULT_TARGET to whichever backend was installed.
+    if (NOT isomorphism_DEFAULT_TARGET)
+        message(FATAL_ERROR
+            "find_package(isomorphism) succeeded but isomorphism_DEFAULT_TARGET "
+            "is not set. Re-install isomorphism with a backend enabled "
+            "(-DUSE_MLX=ON, -DUSE_EIGEN=ON, or -DUSE_TORCH=ON).")
+    endif ()
+    set(_iso_link_target ${isomorphism_DEFAULT_TARGET})
+    message(STATUS "Sampler: linking against installed ${_iso_link_target}")
 endif ()
 
 # ==============================================================================
@@ -58,7 +70,7 @@ target_include_directories(sampler
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
-target_link_libraries(sampler PUBLIC isomorphism OpenMP::OpenMP_CXX)
+target_link_libraries(sampler PUBLIC ${_iso_link_target} OpenMP::OpenMP_CXX)
 
 # ==============================================================================
 # Build-type flags
