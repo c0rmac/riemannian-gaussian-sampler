@@ -1,8 +1,8 @@
 # Riemannian Gaussian Sampler
 
-Exact spectral sampling from isotropic Gaussian distributions on the **Stiefel manifold** $V(n, k)$ and the **rotation group** $SO(d)$.
+A general-purpose, efficient Riemannian Gaussian sampler. The library provides exact spectral sampling from isotropic Gaussian distributions on compact matrix manifolds, with current support for the **rotation group** $SO(d)$ and the **Stiefel manifold** $V(n, k)$.
 
-Both samplers produce samples that lie *exactly* on the manifold (up to floating-point precision) with the correct concentration around a user-supplied mean frame, at a fraction of the cost of rejection sampling or geodesic random walks.
+Samples lie *exactly* on the manifold (up to floating-point precision) with the correct concentration around a user-supplied mean frame. The spectral approach — decomposing each sample into a Weyl-chamber angle draw (Phase I, done once at construction) and a manifold lift (Phase II, per sample) — avoids the exponential rejection rates of naive methods and the geodesic discretisation error of random walks, while remaining efficient enough for large batches on both CPU and GPU.
 
 ---
 
@@ -73,6 +73,48 @@ find_package(sampler REQUIRED)
 add_executable(my_app main.cpp)
 target_link_libraries(my_app PRIVATE sampler::sampler)
 ```
+
+---
+
+## Mathematical Background
+
+### The Riemannian Gaussian
+
+The Riemannian Gaussian distribution on a smooth Riemannian manifold $(\mathcal{M}, g)$ was first established by Pennec (2006) as the maximum-entropy distribution given a fixed mean point and covariance. For an isotropic covariance with concentration parameter $\alpha > 0$, the density with respect to the Riemannian volume measure is
+
+$$\mu_\infty(X) = \frac{1}{Z(\alpha,\widehat{M})}\exp\!\left(-\alpha\, d_g^2(X,\, \widehat{M})\right), \qquad Z(\alpha,\widehat{M}) = \int_{\mathcal{M}} \exp\!\left(-\alpha\, d_g^2(X,\widehat{M})\right) d\mu_g(X)$$
+
+where $d_g(X, \widehat{M})$ is the geodesic distance between $X$ and the mean frame $\widehat{M} \in \mathcal{M}$, and $\alpha = \lambda/\delta^2$ plays the role of a precision (inverse variance). Larger $\alpha$ concentrates the distribution tightly around $\widehat{M}$; as $\alpha \to 0$ the distribution approaches the uniform (Haar) measure on $\mathcal{M}$.
+
+Direct sampling from $\mu_\infty$ is difficult: $Z(\alpha, \widehat{M})$ has no closed form, the manifold is high-dimensional, and naive rejection sampling has exponentially poor acceptance rates in the concentrated regime.
+
+### Shape spaces and the spectral reduction
+
+The key insight that makes exact and efficient sampling possible is a decomposition of the manifold into a low-dimensional **shape space** and a high-dimensional but analytically tractable **orientation fibre**.
+
+$SO(d)$ is a compact symmetric space. $V(n, k)$ is a compact homogeneous space — not symmetric in general, but it admits an analogous spectral decomposition via its reductive structure as the quotient $O(n) / O(n-k)$. In both cases, every point $X \in \mathcal{M}$ can be written as
+
+$$X = h \cdot \exp(A(\theta)) \cdot \widehat{M}, \qquad h \in H,\quad \theta \in \mathcal{W}$$
+
+where $H$ is the stabiliser subgroup (the "orientation" degrees of freedom), $\mathcal{W}$ is the **Weyl chamber** (a cone of dimension $m \ll \dim \mathcal{M}$), and $A(\theta)$ is the canonical Lie-algebra element encoding the shape parameters $\theta$.
+
+A generalised integration formula factorises the Riemannian volume measure exactly:
+
+$$\int_{\mathcal{M}} f(X)\, d\mu_g(X) = C \int_{\mathcal{W}} f(\theta)\, w(\theta)\, d\theta$$
+
+where the **density kernel** $w(\theta)$ is the Jacobian of the spectral change of variables, given explicitly by
+
+$$w(\theta) = \prod_{\alpha \in \Phi^+} \left|\sin\!\left(c_\alpha\, \alpha(\theta)\right)\right|^{m_\alpha}$$
+
+with $\Phi^+$ the positive restricted roots, $m_\alpha$ the geometric multiplicity of each root, and $c_\alpha$ a structural constant. The induced density on the shape space is therefore
+
+$$p_\infty(\theta) = \frac{1}{Z_{\mathcal{W}}}\, w(\theta)\, \exp\!\left(-\alpha\, \|A(\theta)\|_g^2\right), \qquad Z_{\mathcal{W}} = \int_{\mathcal{W}} w(\theta)\, \exp\!\left(-\alpha\, \|A(\theta)\|_g^2\right) d\theta$$
+
+This is the *exact* marginal of $\mu_\infty$ under the spectral projection — no approximation is made. Sampling $\theta \sim p_\infty$ via HMC (Phase I) and then drawing an orientation $h \sim \mathrm{Haar}(H)$ and forming $X = h \cdot \exp(A(\theta)) \cdot \widehat{M}$ (Phase II) produces exact, unbiased samples from $\mu_\infty$. For $SO(d)$, $H = O(d)$ (the full orthogonal group); for $V(n, k)$, $H = O(n-k)$ (the stabiliser of the canonical frame, acting on the orthogonal complement).
+
+For $SO(d)$ the Weyl chamber has dimension $m = \lfloor d/2 \rfloor$; for $V(n, k)$ it has dimension $k$. This reduction — from $\frac{d(d-1)}{2}$ or $nk - \frac{k(k+1)}{2}$ manifold dimensions down to $m$ shape parameters — is what makes Monte Carlo sampling practical.
+
+> A detailed paper with full proofs is currently pending review.
 
 ---
 
