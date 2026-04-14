@@ -5,16 +5,12 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Backend forwarding – mirrors the isomorphism library options.
-#option(USE_MLX  "Build with Apple Silicon (Metal/MLX) backend" OFF)
-#option(USE_SYCL "Build with PC/Intel/NVIDIA (SYCL/oneMKL) backend" OFF)
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
-#if (USE_MLX AND USE_SYCL)
-#    message(FATAL_ERROR "Choose either USE_MLX or USE_SYCL, not both.")
-#elseif (NOT USE_MLX AND NOT USE_SYCL)
-#    message(FATAL_ERROR "No backend selected. Use -DUSE_MLX=ON or -DUSE_SYCL=ON.")
-#endif ()
-
+# ==============================================================================
+# OpenMP
+# ==============================================================================
 if (APPLE)
     # Provide a hint to CMake for Homebrew's libomp location
     set(OpenMP_ROOT "/opt/homebrew/opt/libomp")
@@ -24,13 +20,12 @@ find_package(OpenMP REQUIRED)
 # ==============================================================================
 # Locate the isomorphism library
 # ==============================================================================
-# Preferred: set ISOMORPHISM_DIR to the root of the isomorphism source tree.
-# CMake will then configure it as a sub-project so both libraries are built
-# together and changes to isomorphism are always reflected here.
-set(ISOMORPHISM_DIR "" CACHE PATH "Path to the isomorphism source directory")
+# Development mode: set ISOMORPHISM_DIR to the root of the isomorphism source
+# tree and CMake will configure it as a sub-project.
+# Install mode (brew): leave unset — find_package picks up the installed copy.
+set(ISOMORPHISM_DIR "" CACHE PATH "Path to the isomorphism source directory (development only)")
 
 if (ISOMORPHISM_DIR STREQUAL "")
-    # Fallback: attempt sibling directory heuristic.
     get_filename_component(_parent "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
     set(ISOMORPHISM_DIR "${_parent}/isomorphism")
 endif ()
@@ -39,7 +34,6 @@ if (EXISTS "${ISOMORPHISM_DIR}/CMakeLists.txt")
     message(STATUS "Sampler: using isomorphism source at ${ISOMORPHISM_DIR}")
     add_subdirectory(${ISOMORPHISM_DIR} isomorphism_build)
 else ()
-    # Already installed – use find_package.
     find_package(isomorphism REQUIRED)
 endif ()
 
@@ -55,21 +49,16 @@ add_library(sampler STATIC
     src/so_gaussian_sampler.cpp
 )
 
+# sampler:: namespace alias so consumers can write target_link_libraries(... sampler::sampler)
+add_library(sampler::sampler ALIAS sampler)
+
 target_include_directories(sampler
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 target_link_libraries(sampler PUBLIC isomorphism OpenMP::OpenMP_CXX)
-
-# ==============================================================================
-# Optional demo executable
-# ==============================================================================
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp")
-    add_executable(sampler_demo main.cpp)
-    target_link_libraries(sampler_demo PRIVATE sampler)
-endif ()
 
 # ==============================================================================
 # Build-type flags
@@ -77,13 +66,63 @@ endif ()
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(sampler PRIVATE -O3 -ffast-math -march=native)
 elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    # Mirror the sanitizer flags that isomorphism adds in Debug mode so that
-    # the sampler and test executables link against the same sanitizer runtime.
     add_compile_options(-fsanitize=address -fsanitize=undefined)
     add_link_options(-fsanitize=address -fsanitize=undefined)
 endif ()
 
 # ==============================================================================
-# Tests
+# Optional demo executable (never installed)
 # ==============================================================================
-add_subdirectory(tests)
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp")
+    add_executable(sampler_demo main.cpp)
+    target_link_libraries(sampler_demo PRIVATE sampler)
+endif ()
+
+# ==============================================================================
+# Tests (only when this is the top-level project, not when consumed via
+# add_subdirectory or during a brew install)
+# ==============================================================================
+if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+    add_subdirectory(tests)
+endif ()
+
+# ==============================================================================
+# Install rules
+# ==============================================================================
+
+# 1. Library archive + headers
+install(TARGETS sampler
+    EXPORT samplerTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+install(DIRECTORY include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+# 2. CMake targets file (sampler-targets.cmake)
+install(EXPORT samplerTargets
+    FILE        sampler-targets.cmake
+    NAMESPACE   sampler::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sampler
+)
+
+# 3. Package config file (sampler-config.cmake)
+configure_package_config_file(
+    cmake/sampler-config.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/sampler-config.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sampler
+)
+
+# 4. Version file (sampler-version.cmake)
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/sampler-version.cmake
+    VERSION     ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/sampler-config.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/sampler-version.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sampler
+)
