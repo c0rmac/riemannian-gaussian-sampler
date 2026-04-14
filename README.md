@@ -1,6 +1,6 @@
 # Riemannian Gaussian Sampler
 
-Exact spectral sampling from isotropic Gaussian distributions on the **Stiefel manifold** V(n, k) and the **rotation group** SO(d).
+Exact spectral sampling from isotropic Gaussian distributions on the **Stiefel manifold** $V(n, k)$ and the **rotation group** $SO(d)$.
 
 Both samplers produce samples that lie *exactly* on the manifold (up to floating-point precision) with the correct concentration around a user-supplied mean frame, at a fraction of the cost of rejection sampling or geodesic random walks.
 
@@ -8,10 +8,10 @@ Both samplers produce samples that lie *exactly* on the manifold (up to floating
 
 ## Algorithms
 
-| Manifold | Algorithm | Phase I | Phase II |
-|---|---|---|---|
-| **V(n, k)** — Stiefel | Algorithm 4.2 | HMC over k principal angles | O(k³) spectral lift via matrix exponential on the 2k×2k active core |
-| **SO(d)** — Rotations | Algorithm 4.3 | HMC over ⌊d/2⌋ rotation angles | O(d) exact Givens-block diagonal + Haar O(d) conjugation |
+| Manifold                | Algorithm | Phase I | Phase II |
+|-------------------------|---|---|---|
+| **$V(n, k)$** — Stiefel | Algorithm 4.2 | HMC over k principal angles | O(k³) spectral lift via matrix exponential on the 2k×2k active core |
+| **$SO(d)$** — Rotations | Algorithm 4.3 | HMC over ⌊d/2⌋ rotation angles | O(d) exact Givens-block diagonal + Haar O(d) conjugation |
 
 Phase I runs once (burn-in) at construction time. Each call to `sample()` runs Phase II only — producing a batch of N manifold-valued samples in a single pass.
 
@@ -78,7 +78,7 @@ target_link_libraries(my_app PRIVATE sampler::sampler)
 
 ## Quick Examples
 
-### SO(d) — sample a random rotation near the identity
+### $SO(d)$ — sample a random rotation near the identity
 
 ```cpp
 #include <sampler/so_gaussian_sampler.hpp>
@@ -103,7 +103,7 @@ int main() {
 }
 ```
 
-### V(n, k) — sample a random frame near a given frame
+### $V(n, k)$ — sample a random frame near a given frame
 
 ```cpp
 #include <sampler/stiefel_gaussian_sampler.hpp>
@@ -285,21 +285,21 @@ cfg.angle_cfg.burn_in       = 3000;   // longer warm-up
 
 ### `SOdGaussianSampler::Config`
 
-| Field | Default | Description |
-|---|---|---|
-| `num_samples` | `1` | Batch size N — number of SO(d) matrices per `sample()` call |
-| `alpha` | `1.0` | Concentration α = λ/δ². Higher = tighter around M̂ |
-| `dtype` | `Float32` | Tensor element type |
-| `angle_cfg` | — | Nested `SOdAngleSampler::Config` (see below) |
+| Field | Default | Description                                                   |
+|---|---|---------------------------------------------------------------|
+| `num_samples` | `1` | Batch size N — number of $SO(d)$ matrices per `sample()` call |
+| `alpha` | `1.0` | Concentration α = λ/δ². Higher = tighter around M̂            |
+| `dtype` | `Float32` | Tensor element type                                           |
+| `angle_cfg` | — | Nested `SOdAngleSampler::Config` (see below)                  |
 
 ### `StiefelGaussianSampler::Config`
 
-| Field | Default | Description |
-|---|---|---|
-| `num_samples` | `1` | Batch size N — number of V(n,k) frames per `sample()` call |
-| `alpha` | `1.0` | Concentration α = λ/δ². Higher = tighter around X̂ |
-| `dtype` | `Float32` | Tensor element type |
-| `angle_cfg` | — | Nested `PrincipalAngleSampler::Config` (see below) |
+| Field | Default | Description                                                  |
+|---|---|--------------------------------------------------------------|
+| `num_samples` | `1` | Batch size N — number of $V(n,k)$ frames per `sample()` call |
+| `alpha` | `1.0` | Concentration α = λ/δ². Higher = tighter around X̂           |
+| `dtype` | `Float32` | Tensor element type                                          |
+| `angle_cfg` | — | Nested `PrincipalAngleSampler::Config` (see below)           |
 
 ### HMC sub-config (shared fields)
 
@@ -327,9 +327,9 @@ include/sampler/
     thread_config.hpp             # Global thread budget (set_num_threads)
     angle_sampler_hmc.hpp         # CRTP HMC base (declaration only)
     principal_angle_sampler.hpp   # Stiefel principal angle density
-    so_angle_sampler.hpp          # SO(d) rotation angle density
-    stiefel_gaussian_sampler.hpp  # V(n,k) top-level sampler (Algorithm 4.2)
-    so_gaussian_sampler.hpp       # SO(d) top-level sampler  (Algorithm 4.3)
+    so_angle_sampler.hpp          # $SO(d)$ rotation angle density
+    stiefel_gaussian_sampler.hpp  # $V(n,k)$ top-level sampler (Algorithm 4.2)
+    so_gaussian_sampler.hpp       # $SO(d)$ top-level sampler  (Algorithm 4.3)
 
 src/
     thread_config.cpp
