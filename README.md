@@ -8,12 +8,12 @@ Both samplers produce samples that lie *exactly* on the manifold (up to floating
 
 ## Algorithms
 
-| Manifold                | Algorithm | Phase I | Phase II |
-|-------------------------|---|---|---|
-| **$V(n, k)$** — Stiefel | Algorithm 4.2 | HMC over k principal angles | O(k³) spectral lift via matrix exponential on the 2k×2k active core |
-| **$SO(d)$** — Rotations | Algorithm 4.3 | HMC over ⌊d/2⌋ rotation angles | O(d) exact Givens-block diagonal + Haar O(d) conjugation |
+| Manifold | Algorithm | Phase I (per HMC step) | Phase II (per sample) |
+|---|---|---|---|
+| **$V(n, k)$** — Stiefel | Algorithm 4.2 | $O(k^2)$ — HMC over $k$ principal angles; Dyson repulsion gradient is $O(k^2)$ | $O(k^3)$ matrix exponential on $2k \times 2k$ active core, then $O(nk^2)$ QR + frame assembly |
+| **$SO(d)$** — Rotations | Algorithm 4.3 | $O(d^2)$ — HMC over $\lfloor d/2 \rfloor$ angles; cosine-difference repulsion gradient is $O(m^2),\ m = \lfloor d/2 \rfloor$ | $O(d)$ Givens-block canonical rotation $\Theta$, then $O(d^3)$ Haar $O(d)$ draw via QR + conjugation $Q\Theta Q^\top \hat{M}$ |
 
-Phase I runs once (burn-in) at construction time. Each call to `sample()` runs Phase II only — producing a batch of N manifold-valued samples in a single pass.
+Phase I runs once at construction (burn-in). Each `sample()` call executes Phase II only. The dominant per-sample cost is $O(nk^2)$ for Stiefel and $O(d^3)$ for $SO(d)$, both arising from the QR decomposition.
 
 ---
 
