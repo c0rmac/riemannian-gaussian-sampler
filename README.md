@@ -149,7 +149,6 @@ cfg.angle_cfg.num_threads  = 8;     // use 8 threads across those chains
 sampler::SOdGaussianSampler samp(M_hat, 4, cfg);
 
 isomorphism::Tensor batch = samp.sample();  // [256, 4, 4]
-math::eval(batch);                          // flush lazy evaluation (MLX backend)
 ```
 
 The `num_chains` chains run in parallel during burn-in; at sampling time each
@@ -254,7 +253,6 @@ sampler::SOdGaussianSampler samp(M_hat, d, cfg);
 for (int step = 0; step < n_steps; ++step) {
     // Draw a fresh batch — only Phase II runs
     isomorphism::Tensor X = samp.sample();
-    math::eval(X);
 
     // ... update M_hat based on X ...
 
