@@ -1,0 +1,15 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Propagate transitive dependencies to the consumer.
+# isomorphism and OpenMP must be findable on the installing machine.
+if (APPLE)
+    set(OpenMP_ROOT "/opt/homebrew/opt/libomp")
+endif ()
+find_dependency(OpenMP REQUIRED)
+find_dependency(isomorphism REQUIRED)
+
+include("${CMAKE_CURRENT_LIST_DIR}/sampler-targets.cmake")
+
+check_required_components(sampler)
