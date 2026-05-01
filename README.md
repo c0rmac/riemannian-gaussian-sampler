@@ -19,33 +19,33 @@ Phase I runs once at construction (burn-in). Each `sample()` call executes Phase
 
 ## Installation
 
-### Prerequisites: isomorphism
+Each backend is a separate Homebrew formula. Pick the one that matches your hardware — [isomorphism](https://github.com/c0rmac/isomorphism) is declared as a dependency and installed automatically.
 
-This library uses [isomorphism](https://github.com/c0rmac/isomorphism) as its tensor backend.
-Install it first, choosing the backend that matches your hardware:
+**Apple MLX** — recommended on Apple Silicon (M1/M2/M3/M4), uses the Metal GPU:
 
 ```bash
 brew tap c0rmac/homebrew-isomorphism
-
-# Apple Silicon (recommended — uses the Metal GPU via MLX)
-brew install isomorphism --with-mlx
-
-# Any CPU (Eigen)
-brew install isomorphism --with-eigen
-
-# PyTorch / LibTorch
-brew install isomorphism --with-torch
+brew tap c0rmac/homebrew-riemannian-gaussian-sampler
+brew install c0rmac/homebrew-riemannian-gaussian-sampler/riemannian-gaussian-sampler-mlx
 ```
 
-For full installation options and building from source, see the
-[isomorphism documentation](https://github.com/c0rmac/isomorphism).
-
-### Install the sampler
+**LibTorch** — for LibTorch / PyTorch users or non-Apple hardware:
 
 ```bash
+brew tap c0rmac/homebrew-isomorphism
 brew tap c0rmac/homebrew-riemannian-gaussian-sampler
-brew install riemannian-gaussian-sampler
+brew install c0rmac/homebrew-riemannian-gaussian-sampler/riemannian-gaussian-sampler-torch
 ```
+
+**Eigen** — lightweight CPU-only, no large framework dependency:
+
+```bash
+brew tap c0rmac/homebrew-isomorphism
+brew tap c0rmac/homebrew-riemannian-gaussian-sampler
+brew install c0rmac/homebrew-riemannian-gaussian-sampler/riemannian-gaussian-sampler-eigen
+```
+
+The `brew tap` lines only need to be run once per machine.
 
 ### Building from source
 
@@ -57,11 +57,11 @@ cmake --build build
 cmake --install build
 ```
 
-If isomorphism is not on the default CMake prefix path, point to its source tree directly:
+If isomorphism is not on the default CMake prefix path, point to its install prefix directly:
 
 ```bash
 cmake -S . -B build \
-  -DISOMORPHISM_DIR=/path/to/isomorphism \
+  -DCMAKE_PREFIX_PATH=/opt/homebrew/opt/isomorphism-mlx \
   -DCMAKE_BUILD_TYPE=Release
 ```
 
