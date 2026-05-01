@@ -123,7 +123,7 @@ For $SO(d)$ the Weyl chamber has dimension $m = \lfloor d/2 \rfloor$; for $V(n, 
 ### $SO(d)$ — sample a random rotation near the identity
 
 ```cpp
-#include <sampler/so_gaussian_sampler.hpp>
+#include <sampler/isotropic/so_gaussian_sampler.hpp>
 #include <isomorphism/math.hpp>
 
 namespace math = isomorphism::math;
@@ -148,7 +148,7 @@ int main() {
 ### $V(n, k)$ — sample a random frame near a given frame
 
 ```cpp
-#include <sampler/stiefel_gaussian_sampler.hpp>
+#include <sampler/isotropic/stiefel_gaussian_sampler.hpp>
 #include <isomorphism/math.hpp>
 
 namespace math = isomorphism::math;
@@ -230,7 +230,7 @@ interop headers provided by isomorphism.
 
 ```cpp
 #include <isomorphism/interop/mlx.hpp>
-#include <sampler/so_gaussian_sampler.hpp>
+#include <sampler/isotropic/so_gaussian_sampler.hpp>
 
 namespace iso_mlx = isomorphism::interop::mlx;
 
@@ -249,7 +249,7 @@ mlx::core::array X_mlx = iso_mlx::unwrap(X);
 
 ```cpp
 #include <isomorphism/interop/torch.hpp>
-#include <sampler/stiefel_gaussian_sampler.hpp>
+#include <sampler/isotropic/stiefel_gaussian_sampler.hpp>
 
 namespace iso_torch = isomorphism::interop::torch;
 
@@ -266,7 +266,7 @@ torch::Tensor X_torch = iso_torch::unwrap(X);
 
 ```cpp
 #include <isomorphism/interop/eigen.hpp>
-#include <sampler/stiefel_gaussian_sampler.hpp>
+#include <sampler/isotropic/stiefel_gaussian_sampler.hpp>
 
 namespace iso_eigen = isomorphism::interop::eigen;
 

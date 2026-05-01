@@ -1,6 +1,6 @@
 #pragma once
 
-#include "angle_sampler_hmc.hpp"
+#include "../angle_sampler_hmc.hpp"
 #include <isomorphism/tensor.hpp>
 #include <isomorphism/math.hpp>
 #include <vector>

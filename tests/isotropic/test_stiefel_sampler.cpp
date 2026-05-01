@@ -1,4 +1,4 @@
-#include "sampler/stiefel_gaussian_sampler.hpp"
+#include "sampler/isotropic/stiefel_gaussian_sampler.hpp"
 
 #include <isomorphism/math.hpp>
 #include <isomorphism/tensor.hpp>
@@ -295,7 +295,7 @@ static void test_print_sample(int n, int k) {
     sampler::StiefelGaussianSampler samp(x_hat, n, k, cfg);
     Tensor X = samp.sample();
 
-    std::cout << "  X =\n" << X << "\n";
+    //std::cout << "  X =\n" << X << "\n";
     std::printf("  ||X^T X − I_k|| = %.2e\n",
                 static_cast<double>(stiefel_error(X, k)));
 }
@@ -312,11 +312,12 @@ int main() {
     std::printf("========================================\n");
 
     math::set_default_device_gpu();
+    sampler::set_num_threads(8);
     auto start_total = high_resolution_clock::now();
 
-    //test_print_sample(6, 3);
+    //test_print_sample(4608, 512);
 
-    //run_stiefel_benchmark(500, stiefel_identity(500, 50), 500, 50, {.num_samples = 500});
+    run_stiefel_benchmark(500, stiefel_identity(4608, 512), 4608, 512, {.num_samples = 32});
 
     // --- Tall-and-skinny regime (n >= 2k) ---
     //test_sample_shape(50, 40);

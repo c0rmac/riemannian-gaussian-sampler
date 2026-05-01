@@ -1,4 +1,4 @@
-#include "sampler/principal_angle_sampler.hpp"
+#include "sampler/isotropic/principal_angle_sampler.hpp"
 
 #include <cassert>
 #include <cmath>

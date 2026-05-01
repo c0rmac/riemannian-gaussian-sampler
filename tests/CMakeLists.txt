@@ -1,8 +1,7 @@
 function(add_sampler_test name)
-    add_executable(${name} ${name}.cpp)
+    add_executable(${name} ${CMAKE_CURRENT_SOURCE_DIR}/${name}.cpp)
     target_link_libraries(${name} PRIVATE sampler)
 endfunction()
 
-# Register test executables here:
-add_sampler_test(test_stiefel_sampler)
-add_sampler_test(test_so_sampler)
+add_subdirectory(isotropic)
+add_subdirectory(anisotropic)

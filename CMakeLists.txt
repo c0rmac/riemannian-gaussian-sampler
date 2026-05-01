@@ -53,12 +53,24 @@ endif ()
 # Sampler library
 # ==============================================================================
 add_library(sampler STATIC
+    # Shared infrastructure
     src/thread_config.cpp
     src/angle_sampler_hmc.cpp
-    src/principal_angle_sampler.cpp
-    src/stiefel_gaussian_sampler.cpp
-    src/so_angle_sampler.cpp
-    src/so_gaussian_sampler.cpp
+    # Isotropic samplers (SO(d) + Stiefel)
+    src/isotropic/principal_angle_sampler.cpp
+    src/isotropic/stiefel_gaussian_sampler.cpp
+    src/isotropic/so_angle_sampler.cpp
+    src/isotropic/so_gaussian_sampler.cpp
+    src/isotropic/so_heterogeneous_gaussian_sampler.cpp
+    src/isotropic/stiefel_heterogeneous_gaussian_sampler.cpp
+    # Anisotropic samplers
+    src/anisotropic/so_anisotropic_angle_sampler.cpp
+    src/anisotropic/so_hypersphere_sampler_cpu.cpp
+    src/anisotropic/so_hypersphere_sampler_cpu_spatial.cpp
+    src/anisotropic/so_hypersphere_sampler_gpu.cpp
+    src/anisotropic/so_anisotropic_gaussian_sampler.cpp
+    src/anisotropic/so_anisotropic_spatial_gaussian_sampler.cpp
+    src/anisotropic/so_anisotropic_heterogeneous_gaussian_sampler.cpp
 )
 
 # sampler:: namespace alias so consumers can write target_link_libraries(... sampler::sampler)
@@ -76,10 +88,18 @@ target_link_libraries(sampler PUBLIC ${_iso_link_target} OpenMP::OpenMP_CXX)
 # Build-type flags
 # ==============================================================================
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
-    target_compile_options(sampler PRIVATE -O3 -ffast-math -march=native)
+    # -ffast-math is deliberately excluded. The HMC density evaluator relies on:
+    #   - std::isfinite() for trajectory validity (broken by -ffinite-math-only)
+    #   - -infinity as a Weyl-chamber rejection sentinel
+    #   - exact division and log for correct Metropolis-Hastings acceptance
+    #   - associative floating-point accumulation order in gradient sums
+    # All of these are invalidated by one or more sub-flags of -ffast-math.
+    # The heavy computation is done by the isomorphism GPU backend, which applies
+    # its own fast-math settings. The sampler gains little from it here.
+    target_compile_options(sampler PRIVATE -O3 -march=native)
 elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_compile_options(-fsanitize=address -fsanitize=undefined)
-    add_link_options(-fsanitize=address -fsanitize=undefined)
+    #add_compile_options(-fsanitize=address -fsanitize=undefined)
+    #add_link_options(-fsanitize=address -fsanitize=undefined)
 endif ()
 
 # ==============================================================================

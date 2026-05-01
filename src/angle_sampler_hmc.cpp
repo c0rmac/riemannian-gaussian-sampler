@@ -1,8 +1,8 @@
 // Include derived class headers first so the compiler knows their full
 // definitions (specifically their compute_log_p_grad signatures) before
 // the explicit instantiations at the bottom of this file.
-#include "sampler/principal_angle_sampler.hpp"
-#include "sampler/so_angle_sampler.hpp"
+#include "sampler/isotropic/principal_angle_sampler.hpp"
+#include "sampler/isotropic/so_angle_sampler.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -121,9 +121,9 @@ template <typename Derived>
 void AngleSamplerHMC<Derived>::run_burn_in() {
     const int m  = cfg_.m;
     const int nt = effective_num_threads(cfg_.num_threads);
-    std::cout << ">> Starting Parallel Burn-in (" << num_chains_
+    /*std::cout << ">> Starting Parallel Burn-in (" << num_chains_
               << " chains, " << nt << " thread(s))..." << std::endl;
-
+*/
     std::atomic<int> done{0};
     const int upd = std::max(1, num_chains_ / 50);
 
@@ -153,17 +153,18 @@ void AngleSamplerHMC<Derived>::run_burn_in() {
                 {
                     const float pct = static_cast<float>(n_done) / num_chains_ * 100.f;
                     const int bw = 40, pos = static_cast<int>(bw * pct / 100.f);
+                    /*
                     std::cout << "\r   [";
                     for (int i = 0; i < bw; ++i)
                         std::cout << (i < pos ? '=' : (i == pos ? '>' : ' '));
                     std::cout << "] " << std::fixed << std::setprecision(1)
-                              << pct << "% " << std::flush;
+                              << pct << "% " << std::flush;*/
                 }
             }
         }
     }
 
-    std::cout << "\n   Burn-in Complete." << std::endl;
+    //std::cout << "\n   Burn-in Complete." << std::endl;
     warmed_up_ = true;
     for (int c = 0; c < num_chains_; c++) {
         chains_[c].step_count     = 0;
@@ -172,13 +173,55 @@ void AngleSamplerHMC<Derived>::run_burn_in() {
 }
 
 // =============================================================================
+// Alpha update — re-burns from current chain positions, no position reset.
+// =============================================================================
+
+template <typename Derived>
+void AngleSamplerHMC<Derived>::set_alpha(double alpha, int burn_in_steps) {
+    cfg_.alpha = alpha;
+    // The derived class reads alpha via cfg_.alpha inside compute_log_p_grad,
+    // so we only need to recompute gradients at the current positions and
+    // run a short burn-in from there.
+    const int m  = cfg_.m;
+    const int nt = effective_num_threads(cfg_.num_threads);
+
+    // Recompute log_p and grad at current positions with the new alpha.
+    #pragma omp parallel num_threads(nt)
+    {
+        std::vector<double> s1(m), s2(m);
+        #pragma omp for schedule(guided)
+        for (int c = 0; c < num_chains_; c++) {
+            chains_[c].log_p = static_cast<const Derived*>(this)
+                ->compute_log_p_grad(chains_[c].theta, chains_[c].grad,
+                                     s1.data(), s2.data(), true);
+        }
+    }
+
+    // Run burn_in_steps of HMC with dual-average adaptation.
+    const int saved_burn_in = cfg_.burn_in;
+    cfg_.burn_in = burn_in_steps;
+    run_burn_in();
+    cfg_.burn_in = saved_burn_in;
+}
+
+// =============================================================================
 // Public sampling interface
 // =============================================================================
 
 template <typename Derived>
-std::vector<double> AngleSamplerHMC<Derived>::sample_angles() {
+std::vector<double> AngleSamplerHMC<Derived>::sample_angles(int num_samples) {
+    if (num_samples <= 0) num_samples = 1;
     const int m  = cfg_.m;
     const int nt = effective_num_threads(cfg_.num_threads);
+    const int nc = num_chains_;
+
+    // Distribute num_samples evenly across the nc chains.
+    // Chain c produces (base + 1) samples if c < extra, else base.
+    // Interleaved output layout: chain c, local index s → slot (s * nc + c).
+    const int base  = num_samples / nc;
+    const int extra = num_samples % nc;
+
+    std::vector<double> out(static_cast<size_t>(num_samples) * m);
 
     #pragma omp parallel num_threads(nt)
     {
@@ -186,28 +229,28 @@ std::vector<double> AngleSamplerHMC<Derived>::sample_angles() {
         std::normal_distribution<double>       norm01(0.0, 1.0);
         std::uniform_real_distribution<double> unif01(0.0, 1.0);
 
-        #pragma omp for schedule(guided)
-        for (int c = 0; c < num_chains_; c++) {
-            for (int t = 0; t < cfg_.thinning; t++) {
-                const bool acc = hmc_trajectory(c, p, tp, pp, fg, pg, s1, s2,
-                                                norm01, unif01);
-                chains_[c].step_count++;
-                if (acc) chains_[c].accepted_count++;
+        #pragma omp for schedule(static)
+        for (int c = 0; c < nc; c++) {
+            const int my_count = base + (c < extra ? 1 : 0);
+            for (int s = 0; s < my_count; s++) {
+                for (int t = 0; t < cfg_.thinning; t++) {
+                    const bool acc = hmc_trajectory(c, p, tp, pp, fg, pg, s1, s2,
+                                                    norm01, unif01);
+                    chains_[c].step_count++;
+                    if (acc) chains_[c].accepted_count++;
+                }
+                std::copy(chains_[c].theta, chains_[c].theta + m,
+                          out.begin() + static_cast<ptrdiff_t>((s * nc + c) * m));
             }
         }
     }
 
-    std::vector<double> out(num_chains_ * m);
-    #pragma omp parallel for schedule(static) num_threads(nt)
-    for (int c = 0; c < num_chains_; c++)
-        std::copy(chains_[c].theta, chains_[c].theta + m,
-                  out.begin() + c * m);
     return out;
 }
 
 template <typename Derived>
 isomorphism::Tensor AngleSamplerHMC<Derived>::sample() {
-    auto v = sample_angles();
+    auto v = sample_angles(num_chains_);
     std::vector<float> f32(v.begin(), v.end());
     if (num_chains_ > 1)
         return isomorphism::math::array(f32, {num_chains_, cfg_.m},

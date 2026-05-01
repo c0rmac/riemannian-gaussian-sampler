@@ -45,7 +45,7 @@ public:
     struct Config {
         int      m             = 1;
         double   alpha         = 1.0;
-        int      num_chains    = 1;
+        int      num_chains    = 8;
         int      num_threads   = 1;   // per-sampler thread budget (Layer 1)
         int      burn_in       = 2000;
         int      leapfrog_steps = 5;
@@ -62,7 +62,11 @@ public:
     bool   is_warmed_up() const;
     double acceptance_rate() const;
 
-    std::vector<double>  sample_angles();
+    // Update the concentration parameter and run additional burn-in steps from
+    // the current chain positions (no position reset — chains stay warm).
+    void set_alpha(double alpha, int burn_in_steps);
+
+    std::vector<double>  sample_angles(int num_samples);
     isomorphism::Tensor  sample() override;
 
 protected:

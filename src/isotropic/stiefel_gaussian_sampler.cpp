@@ -1,4 +1,4 @@
-#include "sampler/stiefel_gaussian_sampler.hpp"
+#include "sampler/isotropic/stiefel_gaussian_sampler.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -41,9 +41,6 @@ void StiefelGaussianSampler::rebuild_angle_sampler() {
     acfg.k     = k_eff_;
     acfg.alpha = alpha_;
 
-    // Explicitly pass the top-level batch size (N) down to the underlying HMC sampler.
-    acfg.num_chains = cfg_.num_samples;
-
     angle_sampler_ = std::make_unique<PrincipalAngleSampler>(acfg);
 }
 
@@ -51,6 +48,23 @@ void StiefelGaussianSampler::set_config(Config cfg) {
     cfg_   = cfg;
     alpha_ = cfg_.alpha;
     rebuild_angle_sampler();
+}
+
+void StiefelGaussianSampler::set_x_hat(isomorphism::Tensor x_hat) {
+    x_hat_ = std::move(x_hat);
+    if (is_fat_) {
+        // Recompute the orthogonal complement for the new consensus frame.
+        Tensor Z    = math::random_normal({n_, k_eff_}, cfg_.dtype);
+        Tensor ZtX  = math::matmul(math::transpose(x_hat_, {1, 0}), Z);
+        Tensor proj = math::matmul(x_hat_, ZtX);
+        x_hat_prime_ = thin_qr(math::subtract(Z, proj));
+    }
+}
+
+void StiefelGaussianSampler::update_alpha(double alpha, int burn_in_steps) {
+    alpha_     = alpha;
+    cfg_.alpha = alpha;
+    angle_sampler_->set_alpha(alpha, burn_in_steps);
 }
 
 // =============================================================================
@@ -62,7 +76,11 @@ Tensor StiefelGaussianSampler::sample() {
     if (N <= 0) N = 1;
 
     // 1. Fetch the N independent sets of principal angles as a flat array.
-    std::vector<double> flat_theta = angle_sampler_->sample_angles();
+    //    High-α: tangent-space Wishart sampling.
+    //    Otherwise: HMC/Splines on the Weyl chamber.
+    std::vector<double> flat_theta = (alpha_ >= kHighAlphaThreshold)
+        ? sample_angles_tangent()
+        : angle_sampler_->sample_angles(N);
 
     Tensor sample_frame;
 
@@ -131,6 +149,17 @@ Tensor StiefelGaussianSampler::sample() {
 
     // High-performance batch path: Returns shape [N, n, k].
     return sample_frame;
+}
+
+Tensor StiefelGaussianSampler::draw_uniform() {
+    int N = cfg_.num_samples > 0 ? cfg_.num_samples : 1;
+
+    // 1. Draw N independent n x k standard Gaussian matrices
+    Tensor G = math::random_normal({N, n_, k_}, cfg_.dtype);
+
+    // 2. The thin QR decomposition of a standard Gaussian matrix
+    //    yields a uniformly distributed orthogonal k-frame in R^n.
+    return thin_qr(G);
 }
 
 // =============================================================================
@@ -203,6 +232,8 @@ Tensor StiefelGaussianSampler::draw_v_right(int k) {
 
     Tensor G = math::random_normal({N, k, k}, cfg_.dtype);
     auto [Q, R] = math::qr(G);
+    //math::eval(Q);
+    //math::eval(R);
 
     // Backend-agnostic diagonal extraction: Mask R with a batched Identity matrix
     Tensor I = math::expand_dims(math::eye(k, cfg_.dtype), {0}); // [1, k, k]
@@ -222,7 +253,10 @@ Tensor StiefelGaussianSampler::thin_qr(const Tensor& a) {
     // Dynamically detect column axis (axis 1 for 2D, axis 2 for 3D tensors)
     int col_axis = a.shape().size() - 1;
 
+    //math::set_default_device_cpu();
     auto [Q_full, R] = math::qr(a);
+    //math::eval(Q_full);
+    //math::eval(R);
 
     // Slice off the extra columns from the full Q matrices
     return math::slice(Q_full, 0, n_cols, col_axis);
@@ -231,6 +265,81 @@ Tensor StiefelGaussianSampler::thin_qr(const Tensor& a) {
 Tensor StiefelGaussianSampler::vec_to_tensor(const std::vector<double>& v) {
     std::vector<float> f32(v.begin(), v.end());
     return math::array(f32, {static_cast<int>(f32.size())}, cfg_.dtype);
+}
+
+// =============================================================================
+// High-α Phase I: Tangent-space principal angle sampler
+// =============================================================================
+//
+// When α ≥ kHighAlphaThreshold, the stationary density concentrates so tightly
+// around the consensus point (X̂) that the Stiefel manifold V(n, k) is locally
+// flat. In this limit, the principal angles θᵢ are sufficiently small
+// that we can apply the approximation sin(θ) ≈ θ.
+//
+// 1. Geometric Reduction:
+//    The Weyl density kernel for V(n, k), which governs eigenvalue repulsion,
+//    simplifies from a trigonometric product to an algebraic one:
+//      w(θ) ≈ (∏ |θᵢ² - θⱼ²|) · ∏ |θᵢ|^(n-2k)
+//
+//    This simplified form is identically the joint eigenvalue density of a
+//    Wishart matrix (Laguerre Orthogonal Ensemble)
+//
+// 2. Sampling Logic:
+//    Rather than running HMC on the curved Weyl chamber, we sample directly
+//    in the tangent space reductive complement m:
+//
+//    a. Draw G ∈ ℝ^{(n-k)×k}, where Gᵢⱼ ~ N(0, 1).
+//       For "fat" frames (n < 2k), we utilize geometric duality to sample
+//       G ∈ ℝ^{k_eff×(n-k_eff)} instead.
+//
+//    b. Form the symmetric PSD matrix M = GᵀG (or GGᵀ). The eigenvalues
+//       of M represent the squared singular values of G.
+//
+//    c. The principal angles θ are extracted as the square roots of these
+//       eigenvalues, scaled by the temperature variance (1/√(2α)).
+//
+// 3. Efficiency:
+//    This method replaces O(G) numerical spline inversions with a single
+//    O(k³) eigvalsh call per batch[cite: 1055, 1056]. It automatically
+//    enforces the Dyson-gas repulsion and boundary interactions (n-2k)
+//    through the inherent geometry of the Gaussian matrix.
+//
+std::vector<double> StiefelGaussianSampler::sample_angles_tangent() {
+    int N = cfg_.num_samples > 0 ? cfg_.num_samples : 1;
+
+    // The active off-diagonal block dimensions in the tangent space m
+    int d_max = n_ - k_eff_;
+    int d_min = k_eff_;
+
+    // Step 1: Draw G ~ N(0, 1) of shape [N, d_max, d_min]
+    Tensor G = math::random_normal({N, d_max, d_min}, cfg_.dtype);
+
+    // Step 2: Compute M = G^T * G -> [N, d_min, d_min] symmetric PSD matrix
+    Tensor GT = math::transpose(G, {0, 2, 1});
+    Tensor M  = math::matmul(GT, G);
+
+    // Step 3: Extract eigenvalues (squared singular values of G)
+    // eigvalsh uses efficient tridiagonalization, much faster than full SVD
+    Tensor eigvals = math::eigvalsh(M);
+    math::eval(eigvals);
+
+    // Step 4: Scale and extract roots
+    float scale = static_cast<float>(1.0 / (2.0 * alpha_));
+    std::vector<double> flat_theta(static_cast<std::size_t>(N * d_min));
+
+    for (int n = 0; n < N; ++n) {
+        Tensor En = math::slice(eigvals, n, n + 1, 0);              // [1, d_min]
+        for (int j = 0; j < d_min; ++j) {
+            Tensor v  = math::slice(En, j, j + 1, 1);               // [1, 1]
+            double ev = math::to_double(v);
+
+            // Protect against float precision dropping slightly below 0
+            flat_theta[static_cast<std::size_t>(n * d_min + j)] =
+                std::sqrt(ev > 0.0 ? ev * scale : 0.0);
+        }
+    }
+
+    return flat_theta;
 }
 
 } // namespace sampler

@@ -1,4 +1,4 @@
-#include "sampler/so_gaussian_sampler.hpp"
+#include "sampler/isotropic/so_gaussian_sampler.hpp"
 
 #include <isomorphism/math.hpp>
 #include <isomorphism/tensor.hpp>
@@ -286,8 +286,10 @@ static void test_print_sample(int d) {
 
     Tensor m_hat = math::eye(d, DType::Float32);
 
+    double delta = 0.0000001;
     sampler::SOdGaussianSampler::Config cfg;
-    cfg.alpha             = 1.0;
+    //cfg.alpha             = 1.0 / (delta * delta);
+    cfg.alpha             = 1e11;
     cfg.num_samples       = 1;
     //cfg.angle_cfg.burn_in = 2000;
 
@@ -309,12 +311,13 @@ int main() {
     std::printf("========================================\n");
     std::printf("   SO(d) Gaussian Sampler — Test Suite  \n");
     std::printf("========================================\n");
+    sampler::set_num_threads(8);
 
-    math::set_default_device_gpu();
+    math::set_default_device_cpu();
     auto t_start = high_resolution_clock::now();
 
     //test_print_sample(10);
-    //test_print_sample(3);
+    test_print_sample(5);
 
     /*
     // --- Correctness tests ---
@@ -338,7 +341,8 @@ int main() {
     test_even_odd_parity();
 */
     // --- Benchmark ---
-    run_so_benchmark(20, 500, 1);
+    //run_so_benchmark(20, 1000, 8);
+    //run_so_benchmark(20, 128, 5000);
 
     auto t_end = high_resolution_clock::now();
 

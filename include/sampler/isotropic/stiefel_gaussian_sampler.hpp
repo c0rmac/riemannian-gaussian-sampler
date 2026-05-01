@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sampler_base.hpp"
+#include "../sampler_base.hpp"
 #include "principal_angle_sampler.hpp"
 #include <isomorphism/tensor.hpp>
 #include <isomorphism/math.hpp>
@@ -49,8 +49,7 @@ public:
         double alpha        = 1.0;                  // Concentration α = λ/δ²
         isomorphism::DType dtype = isomorphism::DType::Float32;
 
-        // HMC configuration (n, k, alpha, and num_chains are set automatically
-        // based on the top-level parameters).
+        // HMC configuration (n, k, and alpha are set automatically; num_chains defaults to 8).
         PrincipalAngleSampler::Config angle_cfg;
     };
 
@@ -62,9 +61,13 @@ public:
     // If num_samples == 1: Returns an unbatched Tensor of shape [n, k].
     isomorphism::Tensor sample() override;
 
+    isomorphism::Tensor draw_uniform();
+
     // Update the configuration. If alpha or angle_cfg changes, the principal
     // angle sampler is rebuilt (including a fresh parallel burn-in).
     void set_config(Config cfg);
+    void set_x_hat(isomorphism::Tensor x_hat);
+    void update_alpha(double alpha, int burn_in_steps = 500);
     void rebuild_angle_sampler();
 
     int  n()             const { return n_; }
@@ -73,6 +76,9 @@ public:
     bool is_fat_frame()  const { return is_fat_; }
     double alpha()       const { return alpha_; }
     double angle_acceptance_rate() const { return angle_sampler_->acceptance_rate(); }
+
+    // α ≥ this threshold activates the tangent-space sampler (replaces HMC Phase I).
+    static constexpr double kHighAlphaThreshold = 1e6;
 
 private:
     isomorphism::Tensor x_hat_;
@@ -113,6 +119,23 @@ private:
 
     // Convert a std::vector<double> to a Float32 Tensor of shape [len].
     isomorphism::Tensor vec_to_tensor(const std::vector<double>& v);
+
+    // High-α Phase I: Tangent-space principal angle sampler.
+    //
+    // When α is very large, the manifold is locally flat. The trigonometric
+    // Weyl density simplifies to an algebraic form:
+    //    w(θ) ≈ (∏ |θᵢ² - θⱼ²|) · ∏ |θᵢ|^(n-2k)
+    //
+    // This allows us to bypass HMC/Splines and sample angles as singular
+    // values of a scaled Gaussian matrix in the reductive complement 𝔪:
+    //
+    // 1. Draw G ∈ ℝ^{(n-k)×k} with G_ij ~ N(0, 1).
+    // 2. Compute the eigenvalues of M = GᵀG (or GGᵀ for fat frames).
+    // 3. Extract θⱼ = sqrt(eig_j / (2α)).
+    //
+    // This provides exact Dyson repulsion and boundary interaction behavior
+    // with O(k³) complexity per batch.
+    std::vector<double> sample_angles_tangent();
 };
 
 } // namespace sampler
